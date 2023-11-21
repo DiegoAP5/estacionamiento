@@ -28,7 +28,12 @@ type Car struct {
     area     floatgeom.Rect2
     entity   *entities.Entity
     mutex    sync.Mutex
-    parkSpot *ParkingSlot
+    parkSpot *Boxes
+}
+
+func sendPoisonAfterDuration(duration time.Duration) {
+    time.Sleep(duration)
+    close(poisonChan)
 }
 
 func NewCar(ctx *scene.Context) *Car {
@@ -61,8 +66,6 @@ func (c *Car) Move(direction string, target float64, step float64) {
 		}
 		if !c.isCollision(direction) {
 			c.shift(direction, step)
-		} else {
-			break // Si hay una colisión, detiene el movimiento
 		}
 		time.Sleep(speed * time.Millisecond)
 	}
@@ -87,12 +90,117 @@ func (c *Car) getCoordinate(direction string) float64 {
 	return c.entity.Y()
 }
 
+func (c *Car) AddToQueue() {
+	c.Move("down", 95, 1)
+}
+
+func (c *Car) EntryParking() {
+	c.Move("down", entranceSpot, 1)
+}
+
+func (c *Car) ExitParking() {
+	c.Move("up", exitSpot, -1)
+}
+
+
+func (c *Car) Park(spot *Boxes) {
+	withMutex(&gateMutex, func() {
+		c.EntryParking()
+	})
+
+	directions := spot.GetDirectionsForParking()
+	for _, direction := range directions {
+		if direction.Direction == "right" || direction.Direction == "down" {
+			c.Move(direction.Direction, direction.Location, 1)
+		} else {
+			c.Move(direction.Direction, direction.Location, -1)
+		}
+	}
+
+	// Estacionar el coche
+	withMutex(&c.mutex, func() {
+		c.parkSpot = spot
+	})
+}
+
+func withMutex(m *sync.Mutex, action func()) {
+	m.Lock()
+	defer m.Unlock()
+	action()
+}
+
+func (c *Car) Leave(spot *Boxes) {
+	directions := spot.GetDirectionsForLeaving()
+	for _, direction := range directions {
+		if direction.Direction == "right" || direction.Direction == "down" {
+			c.Move(direction.Direction, direction.Location, 1)
+		} else {
+			c.Move(direction.Direction, direction.Location, -1)
+		}
+	}
+}
+
+func (c *Car) LeaveSpot() {
+	spotX := c.X()
+	c.Move("left", spotX-30, -1)
+}
+
+func (c *Car) GoAway() {
+	c.Move("up", -20, -1)
+}
+
+func (c *Car) safeExecute(action func()) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	action()
+}
+
+func (c *Car) MoveVertically(dy float64) {
+	c.safeExecute(func() {
+		c.entity.ShiftY(dy)
+	})
+}
+
+func (c *Car) MoveHorizontally(dx float64) {
+	c.safeExecute(func() {
+		c.entity.ShiftX(dx)
+	})
+}
+
+func (c *Car) X() float64 {
+	var x float64
+	c.safeExecute(func() {
+		x = c.entity.X()
+	})
+	return x
+}
+
+func (c *Car) Y() float64 {
+	var y float64
+	c.safeExecute(func() {
+		y = c.entity.Y()
+	})
+	return y
+}
+
+func (c *Car) SetParkSpot(spot *Boxes) {
+	c.parkSpot = spot
+}
+
+func (c *Car) GetParkSpot() *Boxes {
+	return c.parkSpot
+}
+
+func (c *Car) Remove() {
+	c.safeExecute(func() {
+		c.entity.Destroy()
+	})
+}
 func (c *Car) isCollision(direction string) bool {
-	carsListMutex.Lock()
-	defer carsListMutex.Unlock()
-	for _, car := range carsList {
+	cars := GetCars()
+	for _, car := range cars {
 		if car == c {
-			continue
+			continue // Skip self
 		}
 		switch direction {
 		case "left":
@@ -149,122 +257,19 @@ func AddCar(car *Car) {
 }
 
 func RemoveCar(car *Car) {
-	carsListMutex.Lock()
-	for i, c := range carsList {
-		if c == car {
-			carsList = append(carsList[:i], carsList[i+1:]...)
-			break
-		}
-	}
-	carsListMutex.Unlock()
-}
-
-func sendPoisonAfterDuration(duration time.Duration) {
-    time.Sleep(duration)
-    close(poisonChan) // Enviar señal de "poison" cerrando el canal
-}
-
-func (c *Car) AddToQueue() {
-	c.Move("down", 95, 1)
-}
-
-func (c *Car) EntryParking() {
-	c.Move("down", entranceSpot, 1)
-}
-
-func (c *Car) ExitParking() {
-	if c.parkSpot != nil {
-		directions := c.parkSpot.GetDirectionsForLeaving()
-		for _, direction := range directions {
-			var step float64
-			if direction.Direction == "right" || direction.Direction == "down" {
-				step = 1
-			} else {
-				step = -1
+	safeExecute(func() {
+		for i, c := range carsList {
+			if c == car {
+				carsList = append(carsList[:i], carsList[i+1:]...)
+				break
 			}
-			c.Move(direction.Direction, direction.Location, step)
 		}
-	}
-}
-
-func (c *Car) Leave(spot *ParkingSlot) {
-	directions := spot.GetDirectionsForLeaving()
-	for _, direction := range directions {
-		if direction.Direction == "right" || direction.Direction == "down" {
-			c.Move(direction.Direction, direction.Location, 1)
-		} else {
-			c.Move(direction.Direction, direction.Location, -1)
-		}
-	}
-}
-
-func (c *Car) GoAway() {
-	c.Move("up", -20, -1)
-}
-
-func (c *Car) Remove() {
-	c.entity.Destroy()
-}
-
-func (c *Car) safeExecute(action func()) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	action()
-}
-
-func (c *Car) X() float64 {
-	var x float64
-	c.safeExecute(func() {
-		x = c.entity.X()
-	})
-	return x
-}
-
-func (c *Car) Y() float64 {
-	var y float64
-	c.safeExecute(func() {
-		y = c.entity.Y()
-	})
-	return y
-}
-
-func (c *Car) SetParkSpot(spot *ParkingSlot) {
-	c.parkSpot = spot
-}
-
-func (c *Car) GetParkSpot() *ParkingSlot {
-	return c.parkSpot
-}
-
-func (c *Car) LeaveSpot() {
-	spotX := c.X()
-	c.Move("left", spotX-30, -1)
-}
-
-func (c *Car) Park(spot *ParkingSlot) {
-	// Asegurarse de que el coche espere su turno para entrar al estacionamiento
-	withMutex(&gateMutex, func() {
-		c.EntryParking()
-	})
-
-	// Mover el coche a su plaza asignada
-	directions := spot.GetDirectionsForParking()
-	for _, direction := range directions {
-		if direction.Direction == "right" || direction.Direction == "down" {
-			c.Move(direction.Direction, direction.Location, 1)
-		} else {
-			c.Move(direction.Direction, direction.Location, -1)
-		}
-	}
-
-	// Estacionar el coche
-	withMutex(&c.mutex, func() {
-		c.parkSpot = spot
 	})
 }
 
-func withMutex(m *sync.Mutex, action func()) {
-	m.Lock()
-	defer m.Unlock()
-	action()
+func GetCars() (cars []*Car) {
+	safeExecute(func() {
+		cars = carsList
+	})
+	return cars
 }

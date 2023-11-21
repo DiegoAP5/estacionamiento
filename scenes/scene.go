@@ -19,18 +19,18 @@ var (
 
 func MainScene(ctx *scene.Context) {
 	parking = *modelos.NewParking()
-	prepareParking(ctx)
+	crearEstacionamiento(ctx)
 
 	event.GlobalBind(ctx, event.Enter, func(enterPayload event.EnterPayload) event.Response {
 		for i := 0; i < 100; i++ {
-			go run(ctx)
-			sleepRandomDuration(1000, 2000)
+			go ejecutar(ctx)
+			random(1000, 2000)
 		}
 		return 0
 	})
 }
 
-func prepareParking(ctx *scene.Context) {
+func crearEstacionamiento(ctx *scene.Context) {
     backgroundColor := color.RGBA{86, 101, 115, 255}
 
     screenWidth := 800 
@@ -40,7 +40,6 @@ func prepareParking(ctx *scene.Context) {
 
     render.Draw(fullScreenRect, 0)
 
-    // Dibuja las líneas del estacionamiento
     for _, spot := range parking.GetSlots() {
         area := spot.GetArea()
         areaX1 := area.Min.X()
@@ -72,27 +71,38 @@ func prepareParking(ctx *scene.Context) {
     render.Draw(entrada, 0)
 }
 
-func run(ctx *scene.Context) {
-	c := createCar(ctx)
-	parkCar(c)
-	exitCar(c)
-	removeCar(c)
+func ejecutar(ctx *scene.Context) {
+	c := crear(ctx)
+	estacionar(c)
+	salir(c)
+	eliminar(c)
 }
 
-func createCar(ctx *scene.Context) *modelos.Car {
+func crear(ctx *scene.Context) *modelos.Car {
 	c := modelos.NewCar(ctx)
 	modelos.AddCar(c)
+	c.AddToQueue()
 	return c
 }
 
-func parkCar(c *modelos.Car) {
+func estacionar(c *modelos.Car) {
 	spotAvailable := parking.GetAvailableParkingSlot()
 	withMutex(&gateMutex, c.EntryParking)
 	c.Park(spotAvailable)
-	sleepRandomDuration(4000, 50000)
+	random(400, 50000)
 	c.LeaveSpot()
 	parking.MakeParkingSlotAvailable(spotAvailable)
 	c.Leave(spotAvailable)
+}
+
+func salir(c *modelos.Car) {
+	withMutex(&gateMutex, c.ExitParking)
+	c.GoAway()
+}
+
+func eliminar(c *modelos.Car) {
+	c.Remove()
+	modelos.RemoveCar(c)
 }
 
 func withMutex(m *sync.Mutex, action func()) {
@@ -101,17 +111,8 @@ func withMutex(m *sync.Mutex, action func()) {
 	action()
 }
 
-func exitCar(c *modelos.Car) {
-	c.ExitParking()
-	c.GoAway()
-}
-
-func removeCar(c *modelos.Car) {
-	modelos.RemoveCar(c)
-	c.Remove()
-}
-
-func sleepRandomDuration(min, max int) {
-	randDuration := time.Duration(rand.Intn(max-min+1) + min)
-	time.Sleep(randDuration * time.Millisecond)
+func random(min, max int) {
+	randomGen := rand.New(rand.NewSource(time.Now().UnixNano()))
+	randomDuration := time.Duration(randomGen.Intn(max-min+1) + min)
+	time.Sleep(time.Millisecond * randomDuration)
 }
