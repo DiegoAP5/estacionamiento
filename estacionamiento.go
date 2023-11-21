@@ -14,7 +14,6 @@ import (
 	"github.com/oakmound/oak/v4/scene"
 )
 
-// Constantes y variables globales
 const (
 	entranceSpot = 135
 	exitSpot     = 145
@@ -30,7 +29,6 @@ var (
 	poisonChan chan struct{}
 )
 
-// Definiciones de estructuras
 type ParkingSlot struct {
 	area                 *floatgeom.Rect2
 	isAvailable          bool
