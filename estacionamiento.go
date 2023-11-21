@@ -28,6 +28,7 @@ var (
 	gateMutex  sync.Mutex
 	carsList   []*Car
 	carsListMutex sync.Mutex
+	poisonChan chan struct{}
 )
 
 // Definiciones de estructuras
@@ -59,14 +60,13 @@ type Car struct {
 }
 
 func main() {
+	
 	oak.AddScene("main", scene.Scene{
 		Start: mainScene,
 	})
-
 	oak.Init("main", func(c oak.Config) (oak.Config, error) {
 		c.BatchLoad = true
 		c.Assets.ImagePath = "assets/images"
-		c.Assets.AudioPath = "assets/audio"
 		return c, nil
 	})
 }
@@ -274,6 +274,8 @@ func (c *Car) Move(direction string, target float64, step float64) {
 		}
 		if !c.isCollision(direction) {
 			c.shift(direction, step)
+		} else {
+			break // Si hay una colisión, detiene el movimiento
 		}
 		time.Sleep(speed * time.Millisecond)
 	}
@@ -303,7 +305,7 @@ func (c *Car) isCollision(direction string) bool {
 	defer carsListMutex.Unlock()
 	for _, car := range carsList {
 		if car == c {
-			continue // Skip self
+			continue
 		}
 		switch direction {
 		case "left":
@@ -391,19 +393,20 @@ func mainScene(ctx *scene.Context) {
 	})
 }
 
+func sendPoisonAfterDuration(duration time.Duration) {
+    time.Sleep(duration)
+    close(poisonChan) // Enviar señal de "poison" cerrando el canal
+}
+
 func prepareParking(ctx *scene.Context) {
-    // Define el color de fondo sólido
-    backgroundColor := color.RGBA{86, 101, 115, 255} // Gris azulado
+    backgroundColor := color.RGBA{86, 101, 115, 255}
 
-    // Asume dimensiones estáticas de la ventana
-    screenWidth := 800  // Reemplaza con el ancho real de la ventana
-    screenHeight := 600 // Reemplaza con la altura real de la ventana
+    screenWidth := 800 
+    screenHeight := 600 
 
-    // Crea un rectángulo de color que cubra toda la pantalla
     fullScreenRect := render.NewColorBox(screenWidth, screenHeight, backgroundColor)
 
-    // Añade el rectángulo de color al renderizado
-    render.Draw(fullScreenRect, 0) // 0 es la capa base
+    render.Draw(fullScreenRect, 0)
 
     // Dibuja las líneas del estacionamiento
     for _, spot := range parking.GetSlots() {
@@ -423,8 +426,6 @@ func prepareParking(ctx *scene.Context) {
         render.Draw(bottomLine, 0)
     }
 
-    // Dibuja los límites del estacionamiento
-    // Estos valores deben ser ajustados según tu diseño específico
     limiteIzquierdo := render.NewLine(100, 125, 100, float64(screenHeight-150), color.White)
     limiteDerecho := render.NewLine(float64(screenWidth-300), 125, float64(screenWidth-300), float64(screenHeight-150), color.White)
     limiteSuperior := render.NewLine(100, 125, float64(screenWidth-350), 125, color.White)
@@ -435,7 +436,6 @@ func prepareParking(ctx *scene.Context) {
     render.Draw(limiteSuperior, 0)
     render.Draw(limiteInferior, 0)
 
-    // Dibuja la entrada del estacionamiento
     entrada := render.NewLine(100, float64(screenHeight-100), 100, float64(screenHeight), color.White)
     render.Draw(entrada, 0)
 }
@@ -456,10 +456,12 @@ func createCar(ctx *scene.Context) *Car {
 
 func parkCar(c *Car) {
 	spotAvailable := parking.GetAvailableParkingSlot()
+	withMutex(&gateMutex, c.EntryParking)
 	c.Park(spotAvailable)
-	sleepRandomDuration(40000, 50000)
+	sleepRandomDuration(400, 50000)
 	c.LeaveSpot()
 	parking.MakeParkingSlotAvailable(spotAvailable)
+	c.Leave(spotAvailable)
 }
 
 func exitCar(c *Car) {
@@ -478,7 +480,7 @@ func sleepRandomDuration(min, max int) {
 }
 
 func (c *Car) AddToQueue() {
-	c.Move("down", entranceSpot, 1)
+	c.Move("down", 95, 1)
 }
 
 func (c *Car) EntryParking() {
@@ -486,8 +488,20 @@ func (c *Car) EntryParking() {
 }
 
 func (c *Car) ExitParking() {
-	c.Move("up", exitSpot, -1)
+	if c.parkSpot != nil {
+		directions := c.parkSpot.GetDirectionsForLeaving()
+		for _, direction := range directions {
+			var step float64
+			if direction.Direction == "right" || direction.Direction == "down" {
+				step = 1
+			} else {
+				step = -1
+			}
+			c.Move(direction.Direction, direction.Location, step)
+		}
+	}
 }
+
 
 func (c *Car) Park(spot *ParkingSlot) {
 	// Asegurarse de que el coche espere su turno para entrar al estacionamiento
