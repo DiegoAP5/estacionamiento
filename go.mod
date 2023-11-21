@@ -5,6 +5,11 @@ go 1.21.0
 require github.com/oakmound/oak/v4 v4.1.0
 
 require (
+	github.com/200sc/go-dist v1.0.0 // indirect
+	github.com/akavel/polyclip-go v0.0.0-20160111220610-2cfdb71461bd // indirect
+)
+
+require (
 	dmitri.shuralyov.com/gpu/mtl v0.0.0-20221208032759-85de2813cf6b // indirect
 	fyne.io/fyne v1.4.3 // indirect
 	fyne.io/fyne/v2 v2.4.1 // indirect
@@ -32,6 +37,7 @@ require (
 	github.com/jsummers/gobmp v0.0.0-20151104160322-e2ba15ffa76e // indirect
 	github.com/oakmound/alsa v0.0.2 // indirect
 	github.com/oakmound/libudev v0.2.1 // indirect
+	github.com/oakmound/oak v2.0.0+incompatible
 	github.com/oakmound/w32 v2.1.0+incompatible // indirect
 	github.com/oov/directsound-go v0.0.0-20141101201356-e53e59c700bf // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect

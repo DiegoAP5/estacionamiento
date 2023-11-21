@@ -6,8 +6,7 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-
-	"github.com/oakmound/oak/v4"
+	
 	"github.com/oakmound/oak/v4/alg/floatgeom"
 	"github.com/oakmound/oak/v4/entities"
 	"github.com/oakmound/oak/v4/event"
@@ -59,17 +58,7 @@ type Car struct {
 	parkSpot *ParkingSlot
 }
 
-func main() {
-	
-	oak.AddScene("main", scene.Scene{
-		Start: mainScene,
-	})
-	oak.Init("main", func(c oak.Config) (oak.Config, error) {
-		c.BatchLoad = true
-		c.Assets.ImagePath = "assets/images"
-		return c, nil
-	})
-}
+
 
 func NewParkingSlot(x, y, x2, y2 float64, column int) *ParkingSlot {
 	directionsForParking := getDirectionForParking(x, y, column)
