@@ -1,19 +1,27 @@
 package main
 
 import (
-    "github.com/oakmound/oak/v4"
-    "github.com/oakmound/oak/v4/scene"
-    "concurrentec2/scenes"
+	"log"
+	"math/rand"
+	"time"
+
+	"github.com/hajimehoshi/ebiten/v2"
+	"concurrentec2/scenes"
 )
 
-func maina() {
-    oak.AddScene("main", scene.Scene{
-        Start: escenas.MainScene,
-    })
+const (
+	screenWidth  = 900
+	screenHeight = 700
+)
 
-    oak.Init("main", func(c oak.Config) (oak.Config, error) {
-        c.BatchLoad = true
-        c.Assets.ImagePath = "assets/images"
-        return c, nil
-    })
+func main() {
+	rand.Seed(time.Now().UnixNano())
+	game := scenas.NewGame()
+
+	ebiten.SetWindowSize(screenWidth, screenHeight)
+	ebiten.SetWindowTitle("Estacionamiento")
+
+	if err := ebiten.RunGame(game); err != nil {
+		log.Fatal(err)
+	}
 }

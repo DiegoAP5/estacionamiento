@@ -1,118 +1,202 @@
-package escenas
+package scenas
 
 import (
-	"concurrentec2/models"
+	"fmt"
 	"image/color"
+	"log"
 	"math/rand"
-	"sync"
 	"time"
 
-	"github.com/oakmound/oak/v4/event"
-	"github.com/oakmound/oak/v4/render"
-	"github.com/oakmound/oak/v4/scene"
+	"concurrentec2/models"
+
+	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 )
 
-var ( 
-	parking modelos.Parking
-	gateMutex  sync.Mutex
+const (
+	spaceWidth     = 60
+	spaceHeight    = 120
+	entryWidth     = 100
+	numSpaces      = 20
+	exitXOffset    = 10
+	lambda         = 0.1
+	maxYPosition   = 100
+	estadoEntrando = "Entrando"
+	estadoSaliendo = "Saliendo"
+	estadoNinguno  = "Ninguno"
+	screenHeight   = 700
+	screenWidth    = 900
 )
 
-func MainScene(ctx *scene.Context) {
-	parking = *modelos.NewParking()
-	crearEstacionamiento(ctx)
+var (
+	carImage         *ebiten.Image
+	timeSinceLastCar float64
+)
 
-	event.GlobalBind(ctx, event.Enter, func(enterPayload event.EnterPayload) event.Response {
-		for i := 0; i < 100; i++ {
-			go ejecutar(ctx)
-			random(1000, 2000)
+func loadCarImage() error {
+	var err error
+	carImage, _, err = ebitenutil.NewImageFromFile("./assets/images/car.png")
+	return err
+}
+
+type Game struct {
+	Cars                []modelos.Car
+	spaces              []modelos.ParkingSpace
+	waitingCars         []modelos.Car
+	EstadoEntradaSalida string
+	semaforoEntrada     chan struct{}
+}
+
+func NewGame() *Game {
+	g := &Game{
+		EstadoEntradaSalida: estadoNinguno,
+		semaforoEntrada:     make(chan struct{}, 1),
+	}
+	g.semaforoEntrada <- struct{}{}
+
+	if err := loadCarImage(); err != nil {
+		log.Fatal(err)
+	}
+
+	parkingWidth := 10 * spaceWidth
+	startX := (screenWidth - parkingWidth) / 2
+	startY := (screenHeight - 2*spaceHeight) / 2
+
+	for i := 0; i < numSpaces; i++ {
+		x := startX + (i%10)*spaceWidth
+		y := startY + (i/10)*spaceHeight
+		g.spaces = append(g.spaces, modelos.ParkingSpace{
+			X: float64(x),
+			Y: float64(y),
+		})
+	}
+
+	return g
+}
+
+func (g *Game) AddCar() {
+	entryX := (screenWidth - entryWidth) / 2
+	car := modelos.Car{
+		Image:  carImage,
+		X:      float64(entryX),
+		Y:      0,
+		Width:  50,
+		Height: 100,
+	}
+	g.Cars = append(g.Cars, car)
+}
+
+func (g *Game) Update() error {
+	currentTime := time.Now()
+	timeSinceLastCar += 1.0 / 20.0
+
+	// Generación de carros
+	if timeSinceLastCar >= 2 && len(g.Cars) < 100 {
+		select {
+		case <-g.semaforoEntrada:
+
+			g.AddCar()
+			timeSinceLastCar = 0
+			g.EstadoEntradaSalida = estadoEntrando
+
+			go func() {
+				time.Sleep(100 * time.Millisecond)
+				g.EstadoEntradaSalida = estadoNinguno
+				g.semaforoEntrada <- struct{}{}
+			}()
+		default:
+
 		}
-		return 0
-	})
+	}
+
+	for i := len(g.Cars) - 1; i >= 0; i-- {
+		car := &g.Cars[i]
+
+		if !car.IsParked && car.Y < maxYPosition {
+			car.Y += 2
+		}
+
+		// Estacionar
+		if !car.IsParked && car.Y >= maxYPosition {
+			for j := range g.spaces {
+				if !g.spaces[j].IsOccupied {
+					g.spaces[j].IsOccupied = true
+					car.IsParked = true
+					car.X = g.spaces[j].X
+					car.Y = g.spaces[j].Y
+					car.ParkedTime = currentTime
+					car.LeaveAfter = time.Duration(5+rand.Intn(6)) * time.Second
+					car.SpaceIndex = j
+					break
+				}
+			}
+		}
+
+		// Salida
+		if car.IsParked && currentTime.Sub(car.ParkedTime) >= car.LeaveAfter {
+			select {
+			case <-g.semaforoEntrada:
+				g.EstadoEntradaSalida = estadoSaliendo
+				g.spaces[car.SpaceIndex].IsOccupied = false
+				g.Cars = append(g.Cars[:i], g.Cars[i+1:]...)
+				go func() {
+					time.Sleep(100 * time.Millisecond)
+					g.EstadoEntradaSalida = estadoNinguno
+					g.semaforoEntrada <- struct{}{}
+				}()
+			default:
+
+			}
+		}
+	}
+
+	return nil
 }
 
-func crearEstacionamiento(ctx *scene.Context) {
-    backgroundColor := color.RGBA{86, 101, 115, 255}
-
-    screenWidth := 800 
-    screenHeight := 600 
-
-    fullScreenRect := render.NewColorBox(screenWidth, screenHeight, backgroundColor)
-
-    render.Draw(fullScreenRect, 0)
-
-    for _, spot := range parking.GetSlots() {
-        area := spot.GetArea()
-        areaX1 := area.Min.X()
-        areaY1 := area.Min.Y()
-        areaX2 := area.Max.X()
-        areaY2 := area.Max.Y()
-
-        topLine := render.NewLine(areaX1, areaY1, areaX2, areaY1, color.White)
-        render.Draw(topLine, 0)
-
-        leftLine := render.NewLine(areaX1, areaY1, areaX1, areaY2, color.White)
-        render.Draw(leftLine, 0)
-
-        bottomLine := render.NewLine(areaX1, areaY2, areaX2, areaY2, color.White)
-        render.Draw(bottomLine, 0)
-    }
-
-    limiteIzquierdo := render.NewLine(100, 125, 100, float64(screenHeight-150), color.White)
-    limiteDerecho := render.NewLine(float64(screenWidth-300), 125, float64(screenWidth-300), float64(screenHeight-150), color.White)
-    limiteSuperior := render.NewLine(100, 125, float64(screenWidth-350), 125, color.White)
-    limiteInferior := render.NewLine(100, float64(screenHeight-150), float64(screenWidth-300), float64(screenHeight-150), color.White)
-
-    render.Draw(limiteIzquierdo, 0)
-    render.Draw(limiteDerecho, 0)
-    render.Draw(limiteSuperior, 0)
-    render.Draw(limiteInferior, 0)
-
-    entrada := render.NewLine(100, float64(screenHeight-100), 100, float64(screenHeight), color.White)
-    render.Draw(entrada, 0)
+func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
+	return screenWidth, screenHeight
 }
 
-func ejecutar(ctx *scene.Context) {
-	c := crear(ctx)
-	estacionar(c)
-	salir(c)
-	eliminar(c)
+
+func (g *Game) Draw(screen *ebiten.Image) {
+	DrawGame(screen, g)
 }
 
-func crear(ctx *scene.Context) *modelos.Car {
-	c := modelos.NewCar(ctx)
-	modelos.AddCar(c)
-	c.AddToQueue()
-	return c
+func DrawGame(screen *ebiten.Image, game *Game) {
+	drawParkingLot(screen)
+	drawCars(screen, game)
+	drawGameState(screen, game.EstadoEntradaSalida)
 }
 
-func estacionar(c *modelos.Car) {
-	spotAvailable := parking.GetAvailableParkingSlot()
-	withMutex(&gateMutex, c.EntryParking)
-	c.Park(spotAvailable)
-	random(400, 50000)
-	c.LeaveSpot()
-	parking.MakeParkingSlotAvailable(spotAvailable)
-	c.Leave(spotAvailable)
+func drawParkingLot(screen *ebiten.Image) {
+	white := color.White
+	parkingWidth := 10 * spaceWidth
+	parkingHeight := 2 * spaceHeight
+	startX := (screenWidth - parkingWidth) / 2
+	startY := (screenHeight - parkingHeight) / 2
+
+	for i := 0; i < 20; i++ {
+		x := startX + (i%10)*spaceWidth
+		y := startY + (i/10)*spaceHeight
+		ebitenutil.DrawLine(screen, float64(x), float64(y), float64(x+spaceWidth), float64(y), white)
+		ebitenutil.DrawLine(screen, float64(x), float64(y), float64(x), float64(y+spaceHeight), white)
+		ebitenutil.DrawLine(screen, float64(x+spaceWidth), float64(y), float64(x+spaceWidth), float64(y+spaceHeight), white)
+		ebitenutil.DrawLine(screen, float64(x), float64(y+spaceHeight), float64(x+spaceWidth), float64(y+spaceHeight), white)
+	}
+
+	entryX := (screenWidth - entryWidth) / 2
+	ebitenutil.DrawRect(screen, float64(entryX), 0, float64(entryWidth), 20, color.RGBA{0, 255, 0, 255})
 }
 
-func salir(c *modelos.Car) {
-	withMutex(&gateMutex, c.ExitParking)
-	c.GoAway()
+func drawCars(screen *ebiten.Image, game *Game) {
+	for _, car := range game.Cars {
+		opts := &ebiten.DrawImageOptions{}
+		opts.GeoM.Translate(car.X, car.Y)
+		screen.DrawImage(car.Image, opts)
+	}
 }
 
-func eliminar(c *modelos.Car) {
-	c.Remove()
-	modelos.RemoveCar(c)
-}
-
-func withMutex(m *sync.Mutex, action func()) {
-	m.Lock()
-	defer m.Unlock()
-	action()
-}
-
-func random(min, max int) {
-	randomGen := rand.New(rand.NewSource(time.Now().UnixNano()))
-	randomDuration := time.Duration(randomGen.Intn(max-min+1) + min)
-	time.Sleep(time.Millisecond * randomDuration)
+func drawGameState(screen *ebiten.Image, estado string) {
+	textoEstado := fmt.Sprintf("Estado: %s", estado)
+	ebitenutil.DebugPrintAt(screen, textoEstado, screenWidth-150, 10)
 }
