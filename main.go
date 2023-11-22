@@ -6,7 +6,7 @@ import (
     "concurrentec2/scenes"
 )
 
-func main() {
+func maina() {
     oak.AddScene("main", scene.Scene{
         Start: escenas.MainScene,
     })
